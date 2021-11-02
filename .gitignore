@@ -1,0 +1,9 @@
+# Ignore everything
+*
+
+# Don't ignore these
+!.gitignore
+!src/*.*
+!include/*.*
+!Project1.sln
+!Project1/Project1*.*
