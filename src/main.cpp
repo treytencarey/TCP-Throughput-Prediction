@@ -48,15 +48,19 @@ public:
 		int ping = getTimeMilli() - time;
 		this->avgPing = (this->avgPing == -1) ? ping : (this->avgPing + ping) / 2;
 
+		// SEND: Ping
 		conn->sendMessage(RegisteredKey(conn, this, Ping), { "a" }, "b");
 
 		// 3. See goals below
+		// Client doesn't have TestThroughput registered, so send TestThroughput to server but TestThroughputClient to client
 		std::string key = RegisteredKey(conn, this, TestThroughput);
 		if (key.length() == 0)
 			key = RegisteredKey(conn, this, TestThroughputClient);
+
 		std::string maxThroughputStr = "";
 		for (int i = 0; i < conn->getMaxThroughput() - 4; i++) // Subtract 4 because that's how many digits are in the throughput size
 			maxThroughputStr += "a";
+		// SEND: (if server) TestThroughput (otherwise) TestThroughputClient.			See reason above, where key is being set
 		conn->sendMessage(key, { "a" }, maxThroughputStr);
 
 		time = getTimeMilli();
@@ -68,9 +72,11 @@ public:
 	{
 		Client* client = (Client*)obj;
 
+		// Do this once every e.g. 1,000 (maxThroughputTests) times
 		throughputTests++;
 		if (throughputTests > maxThroughputTests)
 		{
+			// Throughput defaults to 8192 at runtime. Set throughput to 1,000, then every 1,000 Pings increment throughput by another 1,000.
 			int throughput = client->getMaxThroughput() == 8192 ? 1000 : client->getMaxThroughput() + 1000;
 			client->requestSetMaxThroughput(throughput);
 
