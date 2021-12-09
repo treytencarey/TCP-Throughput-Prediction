@@ -54,6 +54,7 @@ public:
 		time = Tools::getTimeMilli();
 	}
 
+	// 4. See goals below
 	bool SetTraining(void* obj, std::vector<std::string> params, std::string body)
 	{
 		this->isTraining = body == "1";
@@ -105,6 +106,7 @@ public:
 			Prediction::addData(conn->getMaxThroughput(), this->avgPing);
 			std::cout << "THROUGHPUT WAS: " << conn->getMaxThroughput() << ", CHANGING TO: " << throughput << std::endl;
 			std::cout << "\tPING WAS (AVG): " << this->avgPing << std::endl;
+			// 5. See goals below
 			if (!this->isTraining)
 			{
 				std::cout << "\tPREDICTED PING WAS: " << Prediction::predict(conn->getMaxThroughput()) << std::endl;
@@ -117,8 +119,8 @@ public:
 	}
 	bool TestThroughputClient(void* obj, std::vector<std::string> params, std::string body)
 	{
-		this->totalTests--;
-		return true; // Client does nothing, server does the testing
+		this->totalTests--; // Used for the training model
+		return true;
 	}
 
 	int time;
@@ -135,6 +137,8 @@ int main(int argc, char** argv)
 	 *		1. Start the client or server (server by default, client if passed ANY params).
 	 *		2. When a new client connects to the server, the server starts the pinging process (where the client sends a ping back, continuously).
 	 *		3. Each iteration, send a message that uses the entire throughput. After X amount of time (e.g. 10 times) change the throughput.
+	 *		4. The first client to connect is the training model (for now). It looks at the amount of time in milliseconds it takes to send some number of bytes, and adds it to the training data.
+	 *		5. Additional clients connect as regular clients. During the pinging process, it uses the training data from the first client to predict the amount of time it should have taken for some number of bytes to send.
 	 */
 
 	// 1.
@@ -158,6 +162,7 @@ int main(int argc, char** argv)
 			RegisterFunction(client, cCrt, Ping);
 			RegisterFunction(client, cCrt, TestThroughputServer);
 
+			// 4.
 			if (!doneTraining)
 			{
 				cCrt->isTraining = true;
@@ -165,6 +170,7 @@ int main(int argc, char** argv)
 				client->sendMessage(key, { "a" }, "1");
 				doneTraining = true;
 
+				// Training model is complete, crunch the numbers and wait for another connection.
 				RegisterFunctionKeyLambdaByName(client, onDisconnect, [],{
 					Prediction::crunch();
 
@@ -206,7 +212,7 @@ int main(int argc, char** argv)
 		while (true)
 		{
 			client->Iterate();
-			if (cCrt->isTraining && cCrt->totalTests < 0)
+			if (cCrt->isTraining && cCrt->totalTests < 0) // If we're a training model and all tests are complete, exit
 				break;
 		}
 	}
