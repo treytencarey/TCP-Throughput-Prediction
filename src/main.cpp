@@ -3,41 +3,63 @@
 #include <Tools.h>
 #include <iostream>
 
-#if defined(_MSC_VER)
-int gettimeofday(struct timeval* tp, struct timezone* tzp)
+#include <preprocessing.h>
+#include <lsr.h>
+class Prediction
 {
-	// Note: some broken versions only have 8 trailing zero's, the correct epoch has 9 trailing zero's
-	// This magic number is the number of 100 nanosecond intervals since January 1, 1601 (UTC)
-	// until 00:00:00 January 1, 1970 
-	static const uint64_t EPOCH = ((uint64_t)116444736000000000ULL);
+public:
+	static std::vector<double> data1;
+	static std::vector<double> data2;
+	static simple_linear_regression* slr;
 
-	SYSTEMTIME  system_time;
-	FILETIME    file_time;
-	uint64_t    time;
+	/**
+	 * \brief Adds data to the prediction model.
+	 * 
+	 * \param The first (independent) variable.
+	 * \param The second (dependent) variable.
+	 */
+	static void addData(double val1, double val2)
+	{
+		Prediction::data1.push_back(val1);
+		Prediction::data2.push_back(val2);
+	}
 
-	GetSystemTime(&system_time);
-	SystemTimeToFileTime(&system_time, &file_time);
-	time = ((uint64_t)file_time.dwLowDateTime);
-	time += ((uint64_t)file_time.dwHighDateTime) << 32;
+	/*
+	 * \brief "Crunches" the numbers based on the prediction model connection.
+	 */
+	static void crunch()
+	{
+		Prediction::slr = new simple_linear_regression(data1, data2, DEBUG);
+	}
 
-	tp->tv_sec = (long)((time - EPOCH) / 10000000L);
-	tp->tv_usec = (long)(system_time.wMilliseconds * 1000);
-	return 0;
-}
-#endif
-long long getTimeMilli()
-{
-	timeval tv;
-	gettimeofday(&tv, 0);
-	return ((long long)tv.tv_sec * 1000) + (tv.tv_usec / 1000);
-}
+	/*
+	 * \brief Predicts the dependent value, given the independent value.
+	 * 
+	 * \param The first (independent) variable.
+	 */
+	static double predict(double val1)
+	{
+		return Prediction::slr->predict(val1);
+	}
+};
+std::vector<double> Prediction::data1;
+std::vector<double> Prediction::data2;
+simple_linear_regression* Prediction::slr;
 
 class CheckRoundTime
 {
 public:
 	CheckRoundTime()
 	{
-		time = getTimeMilli();
+		time = Tools::getTimeMilli();
+	}
+
+	bool SetTraining(void* obj, std::vector<std::string> params, std::string body)
+	{
+		this->isTraining = body == "1";
+		std::cout << "Connected to server as a " << std::string((this->isTraining) ? "TRAINING MODEL" : "CLIENT") << std::endl;
+
+		return true;
 	}
 
 	// 2. See goals below
@@ -45,43 +67,48 @@ public:
 	{
 		Connection* conn = (Connection*)obj;
 
-		int ping = getTimeMilli() - time;
+		int ping = Tools::getTimeMilli() - time;
 		this->avgPing = (this->avgPing == -1) ? ping : (this->avgPing + ping) / 2;
 
 		// SEND: Ping
 		conn->sendMessage(RegisteredKey(conn, this, Ping), { "a" }, "b");
 
 		// 3. See goals below
-		// Client doesn't have TestThroughput registered, so send TestThroughput to server but TestThroughputClient to client
-		std::string key = RegisteredKey(conn, this, TestThroughput);
+		// Client doesn't have TestThroughputServer registered, so send TestThroughputServer to server but TestThroughputClient to client
+		std::string key = RegisteredKey(conn, this, TestThroughputServer);
 		if (key.length() == 0)
 			key = RegisteredKey(conn, this, TestThroughputClient);
 
 		std::string maxThroughputStr = "";
 		for (int i = 0; i < conn->getMaxThroughput() - 4; i++) // Subtract 4 because that's how many digits are in the throughput size
 			maxThroughputStr += "a";
-		// SEND: (if server) TestThroughput (otherwise) TestThroughputClient.			See reason above, where key is being set
+		// SEND: (if server) TestThroughputServer (otherwise) TestThroughputClient.			See reason above, where key is being set
 		conn->sendMessage(key, { "a" }, maxThroughputStr);
 
-		time = getTimeMilli();
+		time = Tools::getTimeMilli();
 
 		return true;
 	}
 
-	bool TestThroughput(void* obj, std::vector<std::string> params, std::string body)
+	bool TestThroughputServer(void* obj, std::vector<std::string> params, std::string body)
 	{
-		Client* client = (Client*)obj;
+		Connection* conn = (Connection*)obj;
 
 		// Do this once every e.g. 1,000 (maxThroughputTests) times
 		throughputTests++;
 		if (throughputTests > maxThroughputTests)
 		{
-			// Throughput defaults to 8192 at runtime. Set throughput to 1,000, then every 1,000 Pings increment throughput by another 1,000.
-			int throughput = client->getMaxThroughput() == 8192 ? 1000 : client->getMaxThroughput() + 1000;
-			client->requestSetMaxThroughput(throughput);
+			// Throughput defaults to 8192 at runtime. Set throughput to 1,000, then every 1,000 Pings increment throughput by another 5,000.
+			int throughput = conn->getMaxThroughput() == 8192 ? 1000 : conn->getMaxThroughput() + 5000;
+			conn->requestSetMaxThroughput(throughput);
 
-			std::cout << "THROUGHPUT WAS: " << client->getMaxThroughput() << ", CHANGING TO: " << throughput << std::endl;
+			Prediction::addData(conn->getMaxThroughput(), this->avgPing);
+			std::cout << "THROUGHPUT WAS: " << conn->getMaxThroughput() << ", CHANGING TO: " << throughput << std::endl;
 			std::cout << "\tPING WAS (AVG): " << this->avgPing << std::endl;
+			if (!this->isTraining)
+			{
+				std::cout << "\tPREDICTED PING WAS: " << Prediction::predict(conn->getMaxThroughput()) << std::endl;
+			}
 
 			throughputTests = 0;
 			this->avgPing = -1;
@@ -90,12 +117,16 @@ public:
 	}
 	bool TestThroughputClient(void* obj, std::vector<std::string> params, std::string body)
 	{
+		this->totalTests--;
 		return true; // Client does nothing, server does the testing
 	}
 
 	int time;
 	int avgPing = -1;
-	int throughputTests = 0, maxThroughputTests = 1000;
+	int throughputTests = 0, maxThroughputTests = 1500;
+	
+	bool isTraining = false;
+	int totalTests = 10 * maxThroughputTests;
 };
 
 int main(int argc, char** argv)
@@ -112,22 +143,48 @@ int main(int argc, char** argv)
 		SocketServer* server = new SocketServer(2324);
 		CheckRoundTime* sCrt = new CheckRoundTime();
 
+		bool doneTraining = false;
+
 		// 2.
-		RegisterFunctionKeyLambda(server, onClientAccept, [], {
+		RegisterFunctionKeyLambdaByName(server, onClientAccept, [&doneTraining],{
+			std::string key;
+
+			std::cout << std::string((!doneTraining) ? "TRAINING MODEL" : "CLIENT") << " connected." << std::endl;
+			
 			Client * client = (Client*)obj;
 			CheckRoundTime* cCrt = new CheckRoundTime();
 
+			RegisterFunction(client, cCrt, SetTraining);
 			RegisterFunction(client, cCrt, Ping);
-			RegisterFunction(client, cCrt, TestThroughput);
+			RegisterFunction(client, cCrt, TestThroughputServer);
 
-			std::string key = RegisteredKey(client, cCrt, Ping);
+			if (!doneTraining)
+			{
+				cCrt->isTraining = true;
+				key = RegisteredKey(client, cCrt, SetTraining);
+				client->sendMessage(key, { "a" }, "1");
+				doneTraining = true;
+
+				RegisterFunctionKeyLambdaByName(client, onDisconnect, [],{
+					Prediction::crunch();
+
+					std::cout << "TRAINING MODEL ENDED." << std::endl;
+					std::cout << "\tNext you'll need to start the model to test predictions against." << std::endl;
+					std::cout << "\tStart a client by passing an IP address to continue." << std::endl;
+				
+					return true;
+				});
+			}
+			key = RegisteredKey(client, cCrt, Ping);
 			client->sendMessage(key, { "a" }, "b");
 
 			return true;
 		});
 
 		// Start the client process
-		system("start /d \"C:\\Users\\treyt\\Desktop\\Homework\\Advanced Comm Networks\\Code\\Project1\\Debug\\\" Project1.exe TestClient");
+		// system("start /d \"C:\\Users\\treyt\\Desktop\\Homework\\Advanced Comm Networks\\Code\\Project1\\Debug\\\" Project1.exe TestClient");
+		std::cout << "\tFirst you'll need to start the training model." << std::endl;
+		std::cout << "\tStart a client by passing an IP address to continue." << std::endl;
 
 		printf("----- SERVER -----\n");
 		while (true)
@@ -137,10 +194,11 @@ int main(int argc, char** argv)
 	}
 	else
 	{
-		SocketClient* client = new SocketClient("192.168.56.1", 2324);
+		SocketClient* client = new SocketClient(argv[1], 2324);
 		CheckRoundTime* cCrt = new CheckRoundTime();
 
 		// 2.
+		RegisterFunction(client, cCrt, SetTraining);
 		RegisterFunction(client, cCrt, Ping);
 		RegisterFunction(client, cCrt, TestThroughputClient);
 
@@ -148,6 +206,8 @@ int main(int argc, char** argv)
 		while (true)
 		{
 			client->Iterate();
+			if (cCrt->isTraining && cCrt->totalTests < 0)
+				break;
 		}
 	}
 

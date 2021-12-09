@@ -13,10 +13,31 @@
       <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
       <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
     </Filter>
+    <Filter Include="Source Files\libs">
+      <UniqueIdentifier>{56b2d057-c1e5-4165-9693-563658b94543}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Source Files\libs\sklearn">
+      <UniqueIdentifier>{ed067571-c643-4542-8df1-890de7a490ca}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\src\main.cpp">
       <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libs\sklearn-master\sklearn\preprocessing.cpp">
+      <Filter>Source Files\libs\sklearn</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libs\sklearn-master\sklearn\lsr.cpp">
+      <Filter>Source Files\libs\sklearn</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libs\sklearn-master\sklearn\naive_bayes.cpp">
+      <Filter>Source Files\libs\sklearn</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libs\sklearn-master\sklearn\logistic_regression.cpp">
+      <Filter>Source Files\libs\sklearn</Filter>
+    </ClCompile>
+    <ClCompile Include="..\libs\sklearn-master\sklearn\mlr.cpp">
+      <Filter>Source Files\libs\sklearn</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
